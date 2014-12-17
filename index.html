@@ -26,6 +26,14 @@
       .column-name {
         font-weight: bold;
       }
+      h1 {
+        margin-bottom: 0;
+      }
+      h2 {
+        margin-top: 0;
+        margin-left: 20px;
+        margin-bottom: 30px;
+      }
     </style>
 
     <script src="ractive-0.6.1.js"></script>
@@ -55,7 +63,11 @@
         var TSVParser = (function() {
           return {
             parse: function(text) {
-              return text;
+              var results = [];
+              jQuery.each(text.split(/\n/), function() {
+                results.push(this.split(/\t/));
+              });
+              return results;
             },
           };
         })();
@@ -66,6 +78,7 @@
               isDataOnly = false,
               columns = [],
               rows = [];
+          var indent = "  ";  // TODO: Make configurable
 
           return {
             setTextIsEmpty: function(value) {
@@ -90,13 +103,41 @@
               var table = (tableName !== '' ? tableName : DEFAULT_TABLE_NAME);
 
               if (!isDataOnly) {
-                sql += "CREATE TABLE " + table + "(\n";
-                //for () {
-                //  sql += "\n";
-                //}
+                sql += "CREATE TABLE " + table + " (\n";
+                for (var i = 0; i < columns.length; i++) {
+                  var constraints = [];
+                  if (columns[i].primaryKey) constraints.push("PRIMARY KEY");
+                  if (columns[i].notNull) constraints.push("NOT NULL");
+                  if (columns[i].unique) constraints.push("UNIQUE");
+                  var comma = (i < columns.length - 1 ? ',' : '');
+                  sql += indent +
+                         columns[i].name + " " +
+                         columns[i].type +
+                         (constraints.length > 0 ? " " : "") +
+                         constraints.join(" ") +
+                         comma + "\n";
+                }
                 sql += ");\n\n";
               }
-              sql += "INSERT INTO " + table + " VALUES(...);\n";
+
+              var insertPreSQL = (function() {
+                var preSQL = "INSERT INTO " + table + " (\n";
+                for (var i = 0; i < columns.length; i++) {
+                  var comma = (i < columns.length - 1 ? ',' : '');
+                  preSQL += indent + columns[i].name + comma + "\n";
+                }
+                preSQL += ") VALUES (\n";
+                return preSQL;
+              })();
+              var insertPostSQL = ");\n";
+              for (var i = 0; i < rows.length; i++) {
+                sql += insertPreSQL;
+                for (var j = 0; j < rows[i].length; j++) {
+                  var comma = (j < rows[i].length - 1 ? ',' : '');
+                  sql += indent + "'" + rows[i][j] + "'" + comma + "\n";
+                }
+                sql += insertPostSQL;
+              }
               return sql;
             }
           };
@@ -108,15 +149,18 @@
             el: '#output',
             template: '#outputTemplate',
             data: {
-              columns: [
-                {name: 'COL1', type: 'string', primaryKey: false, notNull: true, unique: false},
-                {name: 'COL2', type: 'string', primaryKey: false, notNull: true, unique: false},
-              ],
+              columns: [],
             },
         });
         // Action
         ractive.on('insertExample', function() {
           this.set('input.text', EXAMPLE_DATA);
+        });
+        ractive.on('updateColumn', function(model, i, prop, newValue) {
+          console.log(Array.prototype.slice.call(arguments));
+          var columns = this.get('columns');
+          columns[i][prop] = newValue;
+          this.set('columns', columns);
         });
         // Tell parameters changes to SQLBuilder.
         ractive.observe('input.tableName', function (newValue) {
@@ -133,13 +177,27 @@
           SQLBuilder.setTextIsEmpty(newValue === '');
           var results = TSVParser.parse(newValue);
           if (results && results.length > 0) {
-            SQLBuilder.setColumns(results[0]);
+            var columns = jQuery.map(results[0], function(name) {
+              return {
+                name: name,
+                type: 'INTEGER',
+                primaryKey: false,
+                notNull: true,
+                unique: false,
+              };
+            });
+            SQLBuilder.setColumns(columns);
             SQLBuilder.setRows(results.slice(1));
+            this.set('columns', columns);
           }
           this.set('output.sql', SQLBuilder.build());
         });
         ractive.observe('input.dataOnly', function (newValue) {
           SQLBuilder.setDataOnly(newValue);
+          this.set('output.sql', SQLBuilder.build());
+        });
+        ractive.observe('columns', function (newValue) {
+          SQLBuilder.setColumns(this.get('columns'));
           this.set('output.sql', SQLBuilder.build());
         });
         // Set default values.
@@ -150,7 +208,7 @@
         /*************** Controller ***************/
       });
     </script>
-    <title>meDDLer: Create DDL & Data statements quickly</title>
+    <title>meDDLer: Create DDL & Data statements quickly...</title>
   </head>
   <body>
 
@@ -167,14 +225,13 @@
         <div class="column">
           <div class="column-name">{{name}}</div>
           Type:
-          <select>
-            <option value="" selected></option>
-            <option value="integer">integer</option>
-            <option value="string">string</option>
+          <select value='{{type}}' on-change='updateColumn:{{i}},"type",{{type}}'>
+            <option value="INTEGER" selected>INTEGER</option>
+            <option value="TEXT">TEXT</option>
           </select>
-          <label><input type="checkbox" checked="{{primaryKey}}" />PRIMARY KEY</label>
-          <label><input type="checkbox" checked="{{notNull}}" />NOT NULL</label>
-          <label><input type="checkbox" checked="{{unique}}" />UNIQUE</label>
+          <label><input type="checkbox" checked="{{primaryKey}}" on-change='updateColumn:{{i}},"primaryKey",{{primaryKey}}' />PRIMARY KEY</label>
+          <label><input type="checkbox" checked="{{notNull}}" on-change='updateColumn:{{i}},"notNull",{{notNull}}' />NOT NULL</label>
+          <label><input type="checkbox" checked="{{unique}}" on-change='updateColumn:{{i}},"unique",{{unique}}' />UNIQUE</label>
         </div>
       {{/each}}
       <br/>
@@ -184,6 +241,8 @@
       <textarea value="{{output.sql}}" placeholder="{{output.placeholder}}" readonly></textarea>
     </script>
 
+    <h1>meDDLer</h1>
+    <h2>Create DDL & Data statements quickly...</h2>
     <div id="output"></div>
 
   </body>
