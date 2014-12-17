@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/HTML; charset=UTF-8"/>
+    <meta http-equiv="Content-Style-Type" content="text/css"/>
+    <meta http-equiv="Content-Script-Type" content="text/javascript"/>
+    <meta name="keywords" content=""/>
+    <meta name="description" content=""/>
+    <meta name="robots" content="noindex, nofollow"/>
+    <meta name="author" content="tyru"/>
+    <meta name="generator" content="Vim"/>
+
+    <style>
+      #output {
+        width: 80%;
+        margin: 0 auto;
+      }
+      textarea {
+        width: 600px;
+        height: 200px;
+      }
+      .column {
+        padding-bottom: 3px;
+        border-bottom: 1px solid #ccc;
+      }
+      .column-name {
+        font-weight: bold;
+      }
+    </style>
+
+    <script src="ractive-0.6.1.js"></script>
+    <script src="jquery-1.11.1.min.js"></script>
+    <script>
+      $(function() {
+
+        /*************** Constants ***************/
+        var EXAMPLE_DATA = [
+          ["ID", "name", "price"].join("\t"),
+          ["1", "foo", "100"].join("\t"),
+          ["2", "bar", "200"].join("\t"),
+          ["3", "baz", "300"].join("\t"),
+        ].join("\n");
+        var INPUT_PLACEHOLDER =
+          "Please paste TSV, CSV format string here\n" +
+          "or insert example text by clicking above button...\n" +
+          "";
+        var OUTPUT_PLACEHOLDER =
+          "DDL & Data SQL is appeared here.\n" +
+          "";
+        var DEFAULT_TABLE_NAME = 'YOUR_TABLE';
+        var TABLE_NAME_RX = /^\w+$/;
+        /*************** Constants ***************/
+
+        /*************** Model ***************/
+        var TSVParser = (function() {
+          return {
+            parse: function(text) {
+              return text;
+            },
+          };
+        })();
+
+        var SQLBuilder = (function() {
+          var textIsEmpty = true,
+              tableName = '',
+              isDataOnly = false,
+              columns = [],
+              rows = [];
+
+          return {
+            setTextIsEmpty: function(value) {
+              textIsEmpty = value;
+            },
+            setTableName: function(value) {
+              tableName = value;
+            },
+            setDataOnly: function(value) {
+              isDataOnly = value;
+            },
+            setColumns: function(value) {
+              columns = value;
+            },
+            setRows: function(value) {
+              rows = value;
+            },
+            build: function() {
+              if (textIsEmpty) return '';
+
+              var sql = '';
+              var table = (tableName !== '' ? tableName : DEFAULT_TABLE_NAME);
+
+              if (!isDataOnly) {
+                sql += "CREATE TABLE " + table + "(\n";
+                //for () {
+                //  sql += "\n";
+                //}
+                sql += ");\n\n";
+              }
+              sql += "INSERT INTO " + table + " VALUES(...);\n";
+              return sql;
+            }
+          };
+        })();
+        /*************** Model ***************/
+
+        /*************** View, Controller ***************/
+        var ractive = new Ractive({
+            el: '#output',
+            template: '#outputTemplate',
+            data: {
+              columns: [
+                {name: 'COL1', type: 'string', primaryKey: false, notNull: true, unique: false},
+                {name: 'COL2', type: 'string', primaryKey: false, notNull: true, unique: false},
+              ],
+            },
+        });
+        // Action
+        ractive.on('insertExample', function() {
+          this.set('input.text', EXAMPLE_DATA);
+        });
+        // Tell parameters changes to SQLBuilder.
+        ractive.observe('input.tableName', function (newValue) {
+          if (!TABLE_NAME_RX.test(newValue)) {
+            this.set('invalidTableNameDisplay', 'inline');
+            return;
+          } else {
+            this.set('invalidTableNameDisplay', 'none');
+          }
+          SQLBuilder.setTableName(newValue);
+          this.set('output.sql', SQLBuilder.build());
+        });
+        ractive.observe('input.text', function (newValue) {
+          SQLBuilder.setTextIsEmpty(newValue === '');
+          var results = TSVParser.parse(newValue);
+          if (results && results.length > 0) {
+            SQLBuilder.setColumns(results[0]);
+            SQLBuilder.setRows(results.slice(1));
+          }
+          this.set('output.sql', SQLBuilder.build());
+        });
+        ractive.observe('input.dataOnly', function (newValue) {
+          SQLBuilder.setDataOnly(newValue);
+          this.set('output.sql', SQLBuilder.build());
+        });
+        // Set default values.
+        ractive.set('input.tableNamePlaceholder', DEFAULT_TABLE_NAME);
+        ractive.set('input.placeholder', INPUT_PLACEHOLDER);
+        ractive.set('output.placeholder', OUTPUT_PLACEHOLDER);
+        ractive.set('invalidTableNameDisplay', 'none');
+        /*************** Controller ***************/
+      });
+    </script>
+    <title>meDDLer: Create DDL & Data statements quickly</title>
+  </head>
+  <body>
+
+    <script id='outputTemplate' type='text/ractive'>
+      <button on-click="insertExample">Insert Example</button>
+      <br/>
+      Table Name = <input type="text" value="{{input.tableName}}" placeholder="{{input.tableNamePlaceholder}}" />
+      <span style="color: red; display: {{invalidTableNameDisplay}};">: Invalid table name.</span>
+      <br/>
+      <textarea value="{{input.text}}" placeholder="{{input.placeholder}}"></textarea>
+      <br/>
+      {{#each columns:i}}
+        <br/>
+        <div class="column">
+          <div class="column-name">{{name}}</div>
+          Type:
+          <select>
+            <option value="" selected></option>
+            <option value="integer">integer</option>
+            <option value="string">string</option>
+          </select>
+          <label><input type="checkbox" checked="{{primaryKey}}" />PRIMARY KEY</label>
+          <label><input type="checkbox" checked="{{notNull}}" />NOT NULL</label>
+          <label><input type="checkbox" checked="{{unique}}" />UNIQUE</label>
+        </div>
+      {{/each}}
+      <br/>
+      <label><input type="checkbox" checked="{{input.dataOnly}}" />Data Only</label>
+      <br/>
+      <br/>
+      <textarea value="{{output.sql}}" placeholder="{{output.placeholder}}" readonly></textarea>
+    </script>
+
+    <div id="output"></div>
+
+  </body>
+</html>
